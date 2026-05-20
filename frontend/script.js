@@ -8,13 +8,16 @@ let visibleNodes = new Set();
 let nodeDataCache = new Map();
 let isLoading = false;
 
+let parentsQueue = [];
+
 const CONFIG = {
     nodeRadius: 28,
     linkDistance: 150,
     chargeStrength: -300,
     horizontalSpacing: 120,
     childrenSpread: 80,
-    verticalSpacing: 80
+    verticalSpacing: 80,
+    maxParentsQueue: 3
 };
 
 //INITIALIZATION
@@ -123,6 +126,8 @@ function getAllAncestors(nodeId) {
 }
 
 function removeNodeAndEdges(nodeId) {
+    if (!allNodes.has(nodeId)) return;
+    
     const edgesToDelete = [];
     for (const [key, edge] of allEdges.entries()) {
         if (edge.source === nodeId || edge.target === nodeId) {
@@ -252,11 +257,28 @@ function updateVisibleNodes() {
     if (!currentNode) return;
     
     const ancestors = getAllAncestors(currentNode);
+    
+    parentsQueue = parentsQueue.filter(id => allNodes.has(id) && id !== currentNode);
+    
+    for (const ancestorId of ancestors) {
+        if (!parentsQueue.includes(ancestorId) && ancestorId !== currentNode) {
+            parentsQueue.push(ancestorId);
+        }
+    }
+    
+    while (parentsQueue.length > CONFIG.maxParentsQueue) {
+        const oldestParentId = parentsQueue.shift();
+        if (oldestParentId !== currentNode && allNodes.has(oldestParentId)) {
+            removeNodeAndEdges(oldestParentId);
+            console.log(`Deleted old parent (FIFO): ${oldestParentId}`);
+        }
+    }
+    
     const directChildren = getChildrenIds(currentNode);
     
     const keepNodes = new Set();
     keepNodes.add(currentNode);
-    ancestors.forEach(a => keepNodes.add(a));
+    parentsQueue.forEach(id => keepNodes.add(id));
     directChildren.forEach(c => keepNodes.add(c));
     
     const nodesToRemove = [];
@@ -268,6 +290,7 @@ function updateVisibleNodes() {
     
     for (const nodeId of nodesToRemove) {
         removeNodeAndEdges(nodeId);
+        parentsQueue = parentsQueue.filter(id => id !== nodeId);
     }
     
     if (nodesToRemove.length > 0) {
@@ -607,6 +630,7 @@ async function deleteCurrentNode() {
         closeModal("editNodeModal");
         
         removeNodeAndEdges(currentNode);
+        parentsQueue = parentsQueue.filter(id => id !== currentNode);
         nodeDataCache.delete(currentNode);
         currentNode = null;
         
@@ -655,6 +679,7 @@ async function searchAndExpand() {
         visibleNodes.clear();
         nodeDataCache.clear();
         currentNode = null;
+        parentsQueue = [];
         
         gLinks.selectAll("*").remove();
         gNodes.selectAll("*").remove();
@@ -895,6 +920,7 @@ function resetGraph(soft = false) {
         visibleNodes.clear();
         nodeDataCache.clear();
         currentNode = null;
+        parentsQueue = [];
         isLoading = false;
     }
     

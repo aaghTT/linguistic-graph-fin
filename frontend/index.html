@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Лингвистический граф</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+</head>
+<body>
+    <div id="nodes-panel">
+        <h3>Управление узлами</h3>
+        
+        <div class="search-group">
+            <input type="text" id="searchInput" placeholder="Поиск по русскому имени" autocomplete="off" title="Поиск по русскому имени">
+            <button id="searchBtn">Показать</button>
+        </div>
+
+        <div class="action-group">
+            <button id="addNodeBtn" class="primary-btn action-btn">Добавить узел</button>
+            <button id="addEdgeBtn" class="primary-btn action-btn">Добавить связь</button>
+            <button id="editNodeBtn" class="primary-btn action-btn">Редактировать узел</button>
+        </div>
+        
+        <div class="info-panel">
+            <div class="info-label">Текущий главный узел</div>
+            <div id="currentNodeDisplay">—</div>
+        </div>
+    </div>
+
+    <div id="canvas-panel">
+        <h3>Управление полотном</h3>
+        
+        <div class="action-group">
+            <button id="exportBtn" class="action-btn">Экспорт JSON</button>
+            <button id="resetBtn" class="action-btn">Очистить полотно</button>
+        </div>
+        
+        <div class="search-group" style="margin-top: 10px;">
+            <input type="text" id="searchNodesInput" placeholder="Поиск узлов на полотне" autocomplete="off" title="Поиск узлов на полотне">
+            <button id="searchNodesBtn">Найти</button>
+        </div>
+        <div id="searchResults" style="display: none;">
+            <div class="search-results-header">Результаты поиска</div>
+            <div id="searchResultsList"></div>
+        </div>
+        
+        <div class="stats" id="statsPanel">
+            <div class="stats-title">Статистика</div>
+            <div>Видимых: <span id="statVisible">0</span></div>
+            <div>В памяти: <span id="statMemory">0</span></div>
+            <div>Связей: <span id="statEdges">0</span></div>
+            <hr>
+            <div class="stat-current"><span class="stat-current-label">Главный:</span> <strong id="statCurrent">—</strong></div>
+            <div>Parent: <span id="statAncestors">0</span></div>
+            <div>Children: <span id="statChildren">0</span></div>
+        </div>
+        
+        <div class="semantic-roles">
+            <div class="tip-title">Семантические связи</div>
+            <div class="checkbox-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="roleSynonym" disabled> Синоним
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="roleAntonym" disabled> Антоним
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="roleMeronym" disabled> Мероним (часть-целое)
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="roleHolonym" disabled> Холоним (целое-часть)
+                </label>
+            </div>
+        </div>
+        
+        <div class="info-tips">
+            <div class="tip-title">Управление графом</div>
+            <div>Клик по узлу - сделать главным</div>
+            <div>ЛКМ по главному узлу - parent (раскрытие слева)</div>
+            <div>ПКМ по главному узлу - children (раскрытие справа)</div>
+        </div>
+    </div>
+
+    <div id="addNodeModal" class="modal">
+        <div class="modal-content">
+            <span class="close" data-modal="addNodeModal">&times;</span>
+            <h3>Добавить узел</h3>
+            <form id="addNodeForm">
+                <label>ID (число, 1-999999999)</label>
+                <input type="number" id="nodeId" min="1" max="999999999" step="1">
+                <small>ID должен быть уникальным и не слишком большим</small>
+                
+                <label>Русское имя (обязательно)</label>
+                <input type="text" id="nodeRuName" maxlength="500">
+                <small>Максимум 500 символов</small>
+                
+                <label>Английское имя (обязательно)</label>
+                <input type="text" id="nodeEnName" maxlength="500">
+                <small>Максимум 500 символов</small>
+                
+                <label>Тип</label>
+                <select id="nodeType">
+                    <option value="object_concept">object_concept</option>
+                    <option value="action_concept">action_concept</option>
+                    <option value="object_attribute_concept">object_attribute_concept</option>
+                    <option value="action_attribute_concept">action_attribute_concept</option>
+                </select>
+                
+                <label>ID parent (можно оставить пустым)</label>
+                <input type="number" id="nodeHypernym" min="1" max="999999999" step="1" placeholder=" ">
+                <small>Укажите ID существующего узла-parent</small>
+                
+                <button type="submit">Создать</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="addEdgeModal" class="modal">
+        <div class="modal-content">
+            <span class="close" data-modal="addEdgeModal">&times;</span>
+            <h3>Добавить связь</h3>
+            <form id="addEdgeForm">
+                <label>ID parent (от кого)</label>
+                <input type="number" id="edgeParentId" min="1" max="999999999" step="1">
+                
+                <label>ID child (к кому)</label>
+                <input type="number" id="edgeChildId" min="1" max="999999999" step="1">
+                
+                <label>Тип связи</label>
+                <select id="edgeType">
+                    <option value="hypernym">hypernym (иерархия)</option>
+                    <option value="synonym">синоним</option>
+                    <option value="antonym">антоним</option>
+                    <option value="meronym">мероним (часть-целое)</option>
+                    <option value="holonym">холоним (целое-часть)</option>
+                </select>
+                
+                <button type="submit">Создать связь</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="editNodeModal" class="modal">
+        <div class="modal-content">
+            <span class="close" data-modal="editNodeModal">&times;</span>
+            <h3>Редактировать узел</h3>
+            <form id="editNodeForm">
+                <label>ID узла</label>
+                <input type="text" id="editNodeId" readonly disabled>
+                
+                <label>Русское имя</label>
+                <input type="text" id="editNodeRuName" maxlength="500">
+                <small>Максимум 500 символов</small>
+                
+                <label>Английское имя</label>
+                <input type="text" id="editNodeEnName" maxlength="500">
+                <small>Максимум 500 символов</small>
+                
+                <label>Тип</label>
+                <select id="editNodeType">
+                    <option value="object_concept">object_concept</option>
+                    <option value="action_concept">action_concept</option>
+                    <option value="object_attribute_concept">object_attribute_concept</option>
+                    <option value="action_attribute_concept">action_attribute_concept</option>
+                </select>
+                
+                <label>ID parent (можно оставить пустым)</label>
+                <input type="number" id="editNodeHypernym" min="1" max="999999999" step="1" placeholder="оставьте пустым">
+                <small>Укажите ID существующего узла-parent</small>
+                
+                <div class="modal-buttons">
+                    <button type="submit" class="save-btn">Сохранить изменения</button>
+                    <button type="button" id="deleteNodeBtn" class="delete-btn">Удалить узел</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="graph-container"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>

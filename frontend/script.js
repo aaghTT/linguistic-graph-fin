@@ -20,8 +20,6 @@ const CONFIG = {
     maxParentsQueue: 3
 };
 
-//INITIALIZATION
-
 function initSimulation() {
     const container = document.getElementById("graph-container");
     const width = container.clientWidth;
@@ -55,8 +53,6 @@ function initSimulation() {
     simulation.alphaDecay(0.02);
     simulation.velocityDecay(0.6);
 }
-
-//HELPER FUNCTIONS
 
 function truncateText(text, maxLen = 18) {
     if (!text) return "?";
@@ -93,7 +89,7 @@ function showNotification(msg, type = "info") {
 
 function getParentId(nodeId) {
     for (const edge of allEdges.values()) {
-        if (edge.source === nodeId && edge.relation === "hypernym") {
+        if (edge.source === nodeId && (edge.relation === "hypernym" || edge.relation === "SEMANTIC")) {
             return edge.target;
         }
     }
@@ -103,7 +99,7 @@ function getParentId(nodeId) {
 function getChildrenIds(nodeId) {
     const children = [];
     for (const edge of allEdges.values()) {
-        if (edge.target === nodeId && edge.relation === "hypernym") {
+        if (edge.target === nodeId && (edge.relation === "hypernym" || edge.relation === "SEMANTIC")) {
             children.push(edge.source);
         }
     }
@@ -137,8 +133,6 @@ function removeNodeAndEdges(nodeId) {
     edgesToDelete.forEach(key => allEdges.delete(key));
     allNodes.delete(nodeId);
 }
-
-//NODE и EDGE MANAGEMENT
 
 function ensureNodeExists(nodeData, parentId = null, position = null) {
     const nodeId = nodeData.id;
@@ -235,8 +229,6 @@ function repositionNodes() {
     }
 }
 
-//API CALLS
-
 async function fetchNodeData(nodeId) {
     if (nodeDataCache.has(nodeId)) return nodeDataCache.get(nodeId);
     
@@ -323,18 +315,27 @@ async function expandParentOfCurrent() {
     isLoading = true;
     
     try {
+        nodeDataCache.delete(currentNode);
         const nodeData = await fetchNodeData(currentNode);
         if (!nodeData) throw new Error("No data");
         
-        const parentId = nodeData.hypernym;
-        if (!parentId) {
-            showNotification(`У узла "${nodeData.ru_name}" нет parent`, "warning");
-            return;
+        let parentId = null;
+        
+        if (nodeData.hypernym) {
+            parentId = nodeData.hypernym;
         }
         
-        if (getParentId(currentNode)) {
-            showNotification(`parent уже добавлен`, "info");
-            isLoading = false;
+        if (!parentId && nodeData.semantic_neighbors && nodeData.semantic_neighbors.length > 0) {
+            for (const neighbor of nodeData.semantic_neighbors) {
+                if (neighbor.relation === "SEMANTIC" || neighbor.relation === "hypernym") {
+                    parentId = neighbor.id;
+                    break;
+                }
+            }
+        }
+        
+        if (!parentId) {
+            showNotification(`У узла "${nodeData.ru_name}" нет родителя`, "warning");
             return;
         }
         
@@ -345,16 +346,16 @@ async function expandParentOfCurrent() {
         const parent = ensureNodeExists(parentData);
         positionParent(parent, current);
         
-        addEdge(currentNode, parentId, "hypernym");
+        addEdge(currentNode, parentId, "SEMANTIC");
         updateVisibleNodes();
         
         setTimeout(() => centerOnNode(parentId), 100);
         
-        showNotification(`parent "${truncateText(parentData.ru_name, 15)}" добавлен`, "success");
+        showNotification(`Родитель "${truncateText(parentData.ru_name, 15)}" добавлен`, "success");
         
     } catch (error) {
         console.error("Error expanding parent:", error);
-        showNotification(`Ошибка загрузки parent`, "error");
+        showNotification(`Ошибка загрузки родителя`, "error");
     } finally {
         isLoading = false;
     }
@@ -376,13 +377,26 @@ async function expandChildrenOfCurrent() {
     isLoading = true;
     
     try {
+        nodeDataCache.delete(currentNode);
         const nodeData = await fetchNodeData(currentNode);
         if (!nodeData) throw new Error("No data");
         
-        const children = nodeData.children || [];
+        let children = [];
+        
+        if (nodeData.children && nodeData.children.length > 0) {
+            children = nodeData.children;
+        }
+        
+        if (children.length === 0 && nodeData.semantic_neighbors && nodeData.semantic_neighbors.length > 0) {
+            for (const neighbor of nodeData.semantic_neighbors) {
+                if (neighbor.relation === "SEMANTIC" || neighbor.relation === "hypernym") {
+                    children.push(neighbor);
+                }
+            }
+        }
         
         if (children.length === 0) {
-            showNotification(`У узла "${nodeData.ru_name}" нет children`, "warning");
+            showNotification(`У узла "${nodeData.ru_name}" нет детей`, "warning");
             return;
         }
         
@@ -396,7 +410,7 @@ async function expandChildrenOfCurrent() {
                 if (childData) {
                     const childNode = ensureNodeExists(childData);
                     newChildren.push(childNode);
-                    addEdge(child.id, currentNode, "hypernym");
+                    addEdge(child.id, currentNode, "SEMANTIC");
                 }
             }
         }
@@ -406,16 +420,16 @@ async function expandChildrenOfCurrent() {
         }
         
         if (newChildren.length === 0) {
-            showNotification(`children уже добавлены`, "info");
+            showNotification(`Дети уже добавлены`, "info");
         } else {
-            showNotification(`Добавлено ${newChildren.length} children`, "success");
+            showNotification(`Добавлено ${newChildren.length} детей`, "success");
         }
         
         updateVisibleNodes();
         
     } catch (error) {
         console.error("Error expanding children:", error);
-        showNotification(`Ошибка загрузки children`, "error");
+        showNotification(`Ошибка загрузки детей`, "error");
     } finally {
         isLoading = false;
     }
@@ -451,8 +465,6 @@ async function setAsCurrentNode(newNodeId) {
     }
     refreshSearchResults();
 }
-
-//CRUD OPERATIONS
 
 async function addNodeToDatabase(nodeData) {
     try {
@@ -523,8 +535,6 @@ async function addEdgeToDatabase(parentId, childId, relation) {
     }
 }
 
-//FUNCTIONS FOR EDITING
-
 async function loadNodeDataForEdit(nodeId) {
     try {
         const response = await fetch(`http://127.0.0.1:8000/api/concept/${nodeId}`);
@@ -574,7 +584,7 @@ async function saveNodeEdit() {
         return;
     }
     if (newHypernym !== null && (isNaN(newHypernym) || newHypernym < 1 || newHypernym > 999999999)) {
-        showNotification("ID parent должен быть от 1 до 999 999 999", "warning");
+        showNotification("ID родителя должен быть от 1 до 999 999 999", "warning");
         return;
     }
     
@@ -646,8 +656,6 @@ async function deleteCurrentNode() {
     }
     refreshSearchResults();
 }
-
-//SEARCH
 
 async function searchAndExpand() {
     const query = document.getElementById("searchInput").value.trim();
@@ -768,8 +776,6 @@ async function searchAndExpand() {
         isLoading = false;
     }
 }
-
-//GRAPH RENDERING
 
 function renderGraph() {
     const visibleNodeIds = new Set(visibleNodes);
@@ -892,8 +898,6 @@ function renderGraph() {
     refreshSearchResults();
 }
 
-//DRAG HANDLERS
-
 function dragStarted(event, d) {
     if (!event.active) simulation.alphaTarget(0.3).restart();
     d.fx = d.x;
@@ -910,8 +914,6 @@ function dragged(event, d) {
 function dragEnded(event, d) {
     if (!event.active) simulation.alphaTarget(0);
 }
-
-//RESET
 
 function resetGraph(soft = false) {
     if (!soft) {
@@ -957,8 +959,6 @@ function centerOnNode(nodeId) {
     
     svg.transition().duration(400).call(zoom.transform, transform);
 }
-
-//UI UPDATE
 
 function updateStatsPanel() {
     const childrenCount = currentNode ? getChildrenIds(currentNode).length : 0;
@@ -1064,8 +1064,6 @@ async function jumpToNodeAndHighlight(nodeId) {
     }, 300);
 }
 
-//MODAL HANDLERS
-
 function openModal(modalId) {
     document.getElementById(modalId).style.display = "block";
 }
@@ -1156,7 +1154,7 @@ function setupModals() {
         }
         
         if (hypernym !== null && (isNaN(hypernym) || hypernym < 1 || hypernym > 999999999)) {
-            showNotification("ID parent должен быть целым числом от 1 до 999 999 999", "warning");
+            showNotification("ID родителя должен быть целым числом от 1 до 999 999 999", "warning");
             hypernymInput.focus();
             return;
         }
@@ -1174,7 +1172,7 @@ function setupModals() {
                 updateVisibleNodes();
             }
         } else {
-            showNotification(`Ошибка создания узла. Возможно, ID уже существует или parent не найден.`, "error");
+            showNotification(`Ошибка создания узла. Возможно, ID уже существует или родитель не найден.`, "error");
         }
         refreshSearchResults();
     };
@@ -1188,24 +1186,59 @@ function setupModals() {
         const relType = document.getElementById("edgeType").value;
         
         if (isNaN(parentId) || parentId < 1 || parentId > 999999999) {
-            showNotification("ID parent должен быть от 1 до 999 999 999", "warning");
+            showNotification("ID родителя должен быть от 1 до 999 999 999", "warning");
             return;
         }
         
         if (isNaN(childId) || childId < 1 || childId > 999999999) {
-            showNotification("ID child должен быть от 1 до 999 999 999", "warning");
+            showNotification("ID ребёнка должен быть от 1 до 999 999 999", "warning");
             return;
         }
         
         const result = await addEdgeToDatabase(parentId, childId, relType);
         if (result && result.status === "ok") {
+            nodeDataCache.delete(parentId);
+            nodeDataCache.delete(childId);
+            
+            if (currentNode) {
+                nodeDataCache.delete(currentNode);
+            }
+            
+            const parentData = await fetchNodeData(parentId);
+            const childData = await fetchNodeData(childId);
+            
+            if (parentData) {
+                ensureNodeExists(parentData);
+            }
+            if (childData) {
+                ensureNodeExists(childData);
+            }
+            
+            addEdge(childId, parentId, "SEMANTIC");
+            
             showNotification(`Связь создана`, "success");
             closeModal("addEdgeModal");
             document.getElementById("addEdgeForm").reset();
+            
             if (currentNode) {
-                nodeDataCache.delete(currentNode);
-                updateVisibleNodes();
+                const currentNodeData = await fetchNodeData(currentNode);
+                if (currentNodeData) {
+                    const updatedNode = ensureNodeExists(currentNodeData);
+                    if (updatedNode) {
+                        allNodes.set(currentNode, updatedNode);
+                    }
+                }
             }
+            
+            visibleNodes.clear();
+            for (const nodeId of allNodes.keys()) {
+                visibleNodes.add(nodeId);
+            }
+            
+            repositionNodes();
+            renderGraph();
+            updateStatsPanel();
+            
         } else {
             showNotification(`Ошибка создания связи`, "error");
         }
@@ -1255,8 +1288,6 @@ function exportGraph() {
     showNotification("Граф экспортирован в JSON", "success");
 }
 
-//EVENT HANDLERS
-
 function setupEventHandlers() {
     document.getElementById("searchBtn").onclick = searchAndExpand;
     document.getElementById("searchInput").onkeypress = e => {
@@ -1289,8 +1320,6 @@ function handleResize() {
     simulation.force("center", d3.forceCenter(container.clientWidth / 2, container.clientHeight / 2));
     simulation.alpha(0.2).restart();
 }
-
-//INIT
 
 window.addEventListener("DOMContentLoaded", () => {
     console.log("Graph Explorer — Linguistic Graph");

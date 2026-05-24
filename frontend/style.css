@@ -1,3 +1,19 @@
+@font-face {
+    font-family: 'Raleway';
+    src: url('fonts/Raleway-VariableFont_wght.ttf') format('truetype');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Raleway';
+    src: url('fonts/Raleway-Italic-VariableFont_wght.ttf') format('truetype');
+    font-weight: 100 900;
+    font-style: italic;
+    font-display: swap;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -206,7 +222,6 @@ input::placeholder {
     color: #4B6399;
 }
 
-/* Семантические связи */
 .checkbox-group {
     display: flex;
     flex-wrap: wrap;
@@ -389,10 +404,6 @@ input::placeholder {
     color: #8A9AAA;
     transition: color 0.2s;
     line-height: 1;
-}
-
-.close:hover {
-    color: #051322;
 }
 
 .close:hover {
